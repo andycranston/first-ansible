@@ -1,6 +1,6 @@
 ---
 #
-# @(!--#) @(#) nginx-log.yaml, sversion 0.1.0, fversion 011, 24-november-2023
+# @(!--#) @(#) nginx-log.yaml, sversion 0.1.0, fversion 012, 27-november-2023
 #
 # ansible playbook to create a 20 GiB logical volume in the root
 # volume group, put a xfs file system on it and mount it at
@@ -18,6 +18,7 @@
     lv_name: var_nginx
     lv_size: 20g
     stop_delay: 10
+    essential_logs: [ access.log , error.log ]
 
   tasks:
   - name: Get status of /var/log/nginx
@@ -38,19 +39,6 @@
   - name: See if a file system already mounted at /var/log/nginx
     ansible.builtin.shell:
       cmd: "( df /var/log/nginx | grep ' /var/log/nginx$' ) ;  test $? -eq 1"
-
-#  - name: Check if /var/log/nginx is already in /etc/fstab
-#    ansible.builtin.lineinfile:
-#      path: /etc/fstab
-#      search_string: /var/log/nginx
-#      state: present
-#      line: "# dummy line"
-#    check_mode: yes
-#    register: presence
-
-#  - name: Show presence
-#    ansible.builtin.debug:
-#      msg: "{{ presence }}"
 
   - name: Running lvdisplay command to determine root volume group name
     become: yes
@@ -91,7 +79,7 @@
 
   - name: Stop nginx daemon(s)
     become: yes
-    ansible.builtin.systemd_service:
+    ansible.builtin.systemd:
       name: nginx
       state: stopped
 
@@ -118,7 +106,7 @@
       fstype: xfs
       state: mounted
 
-  - name: copy essential files over
+  - name: copy essential log files over
     become: yes
     ansible.builtin.copy:
       remote_src: true
@@ -127,15 +115,28 @@
       group: adm
       src: "{{ tempdir.path }}/{{ item }}"
       dest: "/var/log/nginx/{{ item }}"
-    loop:
-      - access.log
-      - error.log
+    loop: "{{ essential_logs }}"
+
+  - name: delete essential log files now that they have been copied
+    become: yes
+    ansible.builtin.file:
+      path: "{{ tempdir.path }}/{{ item }}"
+      state: absent
+    loop: "{{ essential_logs }}"
 
   - name: Start nginx daemon(s)
     become: yes
-    ansible.builtin.systemd_service:
+    ansible.builtin.systemd:
       name: nginx
       state: started
+
+#  - name: Copy remaining log files over (this could take a few minutes)
+#    become: yes
+#    ansible.builtin.copy:
+#      remote_src: true
+#      mode: preserve
+#      src: "{{ tempdir.path }}/"
+#      dest: /var/log/nginx
     
 # end of playbook
 ...

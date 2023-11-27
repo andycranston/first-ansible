@@ -1,0 +1,119 @@
+---
+#
+# @(!--#) @(#) diskexpand.yaml, sversion 0.1.0, fversion 001, 27-november-2023
+#
+# after the root disk of a RedHat 7.9 server has been increased in size
+# using the VMWare interface run this playbook to make that space available
+#
+# assumptions:
+#
+#   1) RedHat 7.9
+#   2) Installed with LVM
+#   3) Single disk system
+#   4) Disk as msdos label
+#
+
+# #################################################################### #
+
+- name: "Disk expand on VMWare - make space available in root volume group"
+  hosts: "{{ vmware_host }}"
+  vars:
+    physical_disk: sda
+    lvm_partition_number: 2
+
+  tasks:
+  - name: "Get lsblk output"
+    register: lsblk
+    ansible.builtin.command:
+      cmd: "lsblk --ascii /dev/{{ physical_disk }}"
+
+  - name: "Display lsblk output"
+    ansible.builtin.debug:
+      var: lsblk.stdout_lines
+
+  - name: "Get parted output"
+    register: parted
+    become: yes
+    ansible.builtin.command:
+      cmd: "parted /dev/{{ physical_disk }} -- unit s print free"
+
+  - name: "Display parted output"
+    ansible.builtin.debug:
+      var: parted.stdout_lines
+
+  - name: "Create a temporary file with a single line containing the text '1'"
+    ansible.builtin.copy:
+      content: "1"
+      dest: /tmp/one.txt
+
+  - name: "Rescan disk"
+    become: yes
+    ansible.builtin.command:
+      cmd: "cp /tmp/one.txt /sys/block/{{ physical_disk }}/device/rescan"
+    
+  - name: "Get lsblk output"
+    register: lsblk
+    ansible.builtin.command:
+      cmd: "lsblk --ascii /dev/{{ physical_disk }}"
+
+  - name: "Display lsblk output"
+    ansible.builtin.debug:
+      var: lsblk.stdout_lines
+
+  - name: "Get parted output"
+    register: parted
+    become: yes
+    ansible.builtin.command:
+      cmd: "parted /dev/{{ physical_disk }} -- unit s print free"
+
+  - name: "Display parted output"
+    ansible.builtin.debug:
+      var: parted.stdout_lines
+
+  - name: "Resize partition to use any available space at end of disk"
+    register: parted
+    become: yes
+    ansible.builtin.command:
+      cmd: "parted /dev/{{ physical_disk }} -- resizepart {{ lvm_partition_number }} -1s print free"
+    
+  - name: "Display parted output"
+    ansible.builtin.debug:
+      var: parted.stdout_lines
+
+  - name: "Get vgdisplay output"
+    register: vgdisplay
+    become: yes
+    ansible.builtin.command:
+      cmd: "vgdisplay"
+  
+  - name: "Display vgdisplay output"
+    ansible.builtin.debug:
+      var: vgdisplay.stdout_lines
+
+  - name: "Resize physical volume(s)"
+    register: pvresize
+    become: yes
+    ansible.builtin.command:
+      cmd: "pvresize /dev/{{ physical_disk }}{{ lvm_partition_number }}"
+
+  - name: "Get vgdisplay output"
+    register: vgdisplay
+    become: yes
+    ansible.builtin.command:
+      cmd: "vgdisplay"
+  
+  - name: "Display vgdisplay output"
+    ansible.builtin.debug:
+      var: vgdisplay.stdout_lines
+
+  - name: "Get lsblk output"
+    register: lsblk
+    ansible.builtin.command:
+      cmd: "lsblk --ascii /dev/{{ physical_disk }}"
+
+  - name: "Display lsblk output"
+    ansible.builtin.debug:
+      var: lsblk.stdout_lines
+
+# end of playbook
+...

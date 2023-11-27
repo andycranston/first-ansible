@@ -1,0 +1,141 @@
+---
+#
+# @(!--#) @(#) nginx-log.yaml, sversion 0.1.0, fversion 011, 24-november-2023
+#
+# ansible playbook to create a 20 GiB logical volume in the root
+# volume group, put a xfs file system on it and mount it at
+# /var/log/nginx
+#
+# Stop nginx before mount and after mount copy the old log files
+# into the new file system
+#
+
+# #################################################################### #
+
+- name: Playbook to create /var/log/nginx logging filesystem
+  hosts: "{{ nginx_host }}"
+  vars:
+    lv_name: var_nginx
+    lv_size: 20g
+    stop_delay: 10
+
+  tasks:
+  - name: Get status of /var/log/nginx
+    register: file_stat
+    ansible.builtin.stat:
+      path: /var/log/nginx
+
+  - name: Verifying /var/log/nginx exists
+    ansible.builtin.fail:
+      msg: "/var/log/nginx does not exist"
+    when: not file_stat.stat.exists
+
+  - name: Verifying /var/log/nginx is a directory
+    ansible.builtin.fail:
+      msg: "/var/log/nginx is not a directory"
+    when: not file_stat.stat.isdir
+
+  - name: See if a file system already mounted at /var/log/nginx
+    ansible.builtin.shell:
+      cmd: "( df /var/log/nginx | grep ' /var/log/nginx$' ) ;  test $? -eq 1"
+
+#  - name: Check if /var/log/nginx is already in /etc/fstab
+#    ansible.builtin.lineinfile:
+#      path: /etc/fstab
+#      search_string: /var/log/nginx
+#      state: present
+#      line: "# dummy line"
+#    check_mode: yes
+#    register: presence
+
+#  - name: Show presence
+#    ansible.builtin.debug:
+#      msg: "{{ presence }}"
+
+  - name: Running lvdisplay command to determine root volume group name
+    become: yes
+    register: lvdisplay
+    ansible.builtin.shell:
+      cmd: "/usr/sbin/lvdisplay | grep -A 2 '/root$' | grep '  VG Name ' | awk '{ print $NF }'"
+
+  - name: Saving root volume group name in variable root_vg_name
+    ansible.builtin.set_fact:
+      root_vg_name: "{{ lvdisplay.stdout_lines.0 }}"
+
+  - name: "Creating logical volume {{ lv_name }} with size {{ lv_size }} in root volume group {{ root_vg_name }}"
+    become: yes
+    lvol:
+      vg: "{{ root_vg_name }}"
+      lv: "{{ lv_name }}"
+      size: "{{ lv_size }}"
+
+  - name: "Creating XFS file system in logical volume /dev/mapper/{{ root_vg_name }}-{{ lv_name}}"
+    become: yes
+    filesystem:
+      dev: "/dev/mapper/{{ root_vg_name }}-{{ lv_name}}"
+      fstype: xfs
+
+  - name: Create a temporary directory /var/log/nginx.XXXXXX
+    become: yes
+    register: tempdir
+    ansible.builtin.tempfile:
+      path: /var/log
+      prefix: nginx.
+      state: directory
+
+  - name: "Removng temp directory '{{ tempdir.path }}'"
+    become: yes
+    ansible.builtin.file:
+      path: "{{ tempdir.path }}"
+      state: absent
+
+  - name: Stop nginx daemon(s)
+    become: yes
+    ansible.builtin.systemd_service:
+      name: nginx
+      state: stopped
+
+  - name: "Waiting for {{ stop_delay }} seconds for nginx dameons to gracefully stop"
+    ansible.builtin.pause:
+      seconds: "{{ stop_delay }}"
+    
+  - name: Rename the /var/log/nginx directory to the temp directory
+    become: yes
+    ansible.builtin.shell:
+      cmd: "mv /var/log/nginx {{ tempdir.path }}"
+
+  - name: Recreate /var/log/nginx
+    become: yes
+    ansible.builtin.file:
+      path: /var/log/nginx
+      state: directory
+
+  - name: Mount the new nginx file system
+    become: yes
+    ansible.builtin.mount:
+      path: /var/log/nginx
+      src: "/dev/mapper/{{ root_vg_name }}-{{ lv_name}}"
+      fstype: xfs
+      state: mounted
+
+  - name: copy essential files over
+    become: yes
+    ansible.builtin.copy:
+      remote_src: true
+      mode: preserve
+      owner: nginx
+      group: adm
+      src: "{{ tempdir.path }}/{{ item }}"
+      dest: "/var/log/nginx/{{ item }}"
+    loop:
+      - access.log
+      - error.log
+
+  - name: Start nginx daemon(s)
+    become: yes
+    ansible.builtin.systemd_service:
+      name: nginx
+      state: started
+    
+# end of playbook
+...

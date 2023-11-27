@@ -1,0 +1,3 @@
+beaches:
+  hosts:
+    beach[1:5]:

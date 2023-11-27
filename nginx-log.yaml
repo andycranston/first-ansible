@@ -130,13 +130,10 @@
       name: nginx
       state: started
 
-#  - name: Copy remaining log files over (this could take a few minutes)
-#    become: yes
-#    ansible.builtin.copy:
-#      remote_src: true
-#      mode: preserve
-#      src: "{{ tempdir.path }}/"
-#      dest: /var/log/nginx
+  - name: Copy remaining log files over (this could take a few minutes)
+    become: yes
+    ansible.builtin.shell:
+      cmd: "cp -pr {{ tempdir.path }}/* /var/log/nginx"
     
 # end of playbook
 ...

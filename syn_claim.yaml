@@ -8,10 +8,9 @@
 - name: "Claim any used disk space into root volume group"
   hosts: "{{ reclaim_host }}"
   vars:
-    root_vg_name: rhel_beach2
+    root_vg_name: rhel_beach5
     first_block_device: sda
-    lvm_partition_number: 2
-    # lvm_partition_number: 3
+    lvm_partition_number: 3
     lvm_partition_name: "/dev/sda{{ lvm_partition_number }}"
     # lvm_partition_name: "/dev/mapper/mpatha{{ lvm_partition_number }}"
     max_number_block_devices: 4

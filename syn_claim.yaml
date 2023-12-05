@@ -1,0 +1,202 @@
+---
+#
+# @(!--#) @(#) syn_claim.yaml, sversion 0.1.0, fversion 002, 05-december-2023
+#
+# claim any unused disk into /dev/sdb3 (lvm) and add to volume group rhel on a Synergy 12000 Blade
+#
+
+- name: "Claim any used disk space into root volume group"
+  hosts: "{{ reclaim_host }}"
+  vars:
+    root_vg_name: rhel_beach2
+    first_block_device: sda
+    lvm_partition_number: 2
+    # lvm_partition_number: 3
+    lvm_partition_name: "/dev/sda{{ lvm_partition_number }}"
+    # lvm_partition_name: "/dev/mapper/mpatha{{ lvm_partition_number }}"
+    max_number_block_devices: 4
+    temp_one_file: /tmp/one.txt
+  tasks:
+
+  - name: "Get name of root file system logical volume"
+    register: root_lv_output
+    shell:
+      cmd: "expand /etc/fstab | grep ' / ' | head -n 1 | awk '{ print $1 }'"
+
+  - name: "Check name of root file system logical volume is not null"
+    assert:
+      fail_msg: "Cannot get name of root file system logical volume fro /etc/fstab"
+      that: root_lv_output.stdout_lines[0] != ""
+
+  - name: "Display name of root file system logical volume"
+    debug:
+      var: root_lv_output.stdout_lines[0]
+
+  - name: "Get the name of the root volume group"
+    register: root_vg_output
+    become: yes
+    shell:
+      cmd: "lvdisplay {{ root_lv_output.stdout_lines[0] }} | grep '^  VG Name ' | awk '{ print $3 }'"
+
+  - name: "Check the name of root volume group is not null"
+    assert:
+      fail_msg: "Cannot get name of root volume group from lvdisplay command output"
+      that: root_vg_output.stdout_lines[0] != ""
+
+  - name: "Display name of root volume group"
+    debug:
+      var: root_vg_output.stdout_lines[0]
+
+  - name: "Make sure root volume group name is {{ root_vg_name }}"
+    assert:
+      fail_msg: "Root volume group name is \"{{ root_vg_output.stdout_lines[0] }}\" when it should be \"{{ root_vg_name }}\""
+      that: root_vg_output.stdout_lines[0] == root_vg_name
+
+  - name: "Get names of the block devices from lsblk command"
+    register: block_devices
+    shell:
+      cmd: "lsblk --ascii | grep '^[a-z]' | grep ' disk' | awk '{ print $1 }' | sort"
+
+  - name: "Get number of returned block devices"
+    set_fact:
+      returned_number_block_devices: "{{ block_devices.stdout_lines | length }}"
+
+  - name: "Display number of returned block devices"
+    debug:
+      var: returned_number_block_devices
+
+  - name: "Check at least one block device name is present"
+    assert:
+      fail_msg: "No name(s) of block device(s) available from lsblk command output"
+      that: returned_number_block_devices|int != 0
+
+  - name: "Check limit of block device names is bot exceeded"
+    assert:
+      fail_msg: "Too many names of block devices displayed by lsblk command output"
+      that: returned_number_block_devices|int <= max_number_block_devices|int
+
+  - name: "Check first block device is {{ first_block_device }}"
+    assert:
+      fail_msg: "First block device is not {{ first_block_device }}"
+      that: block_devices.stdout_lines[0] == first_block_device
+
+  - name: "Display names of block devices"
+    debug:
+      var: block_devices.stdout_lines
+
+  - name: "Display block device names one at a time"
+    debug:
+      msg: "{{ item }}"
+    loop:
+      "{{ block_devices.stdout_lines }}"
+
+  - name: "Create temporary file {{ temp_one_file }}"
+    copy:
+      dest: "{{ temp_one_file }}"
+      content: "1"
+      force: true
+
+  - name: "Rescanning block disk devices"
+    become: yes
+    command:
+      cmd: "cp {{ temp_one_file }} /sys/block/{{ item }}/device/rescan"
+    loop:
+      "{{ block_devices.stdout_lines }}"
+
+  - name: "Run multipath -ll for the first time"
+    become: yes
+    register: multipath_first_output
+    command:
+      cmd: "multipath -ll"
+
+  - name: "Display output from first multipath run"
+    debug:
+      var: multipath_first_output
+
+  - name: "Reload multipathd.service"
+    become: yes
+    register: multipathd_restart_output
+    command:
+      cmd: "systemctl reload multipathd"
+
+  - name: "Display output from multipathd reload (there is usually no output)"
+    debug:
+      var: multipathd_restart_output
+
+  - name: "Run multipath -ll a second time"
+    become: yes
+    register: multipath_second_output
+    command:
+      cmd: "multipath -ll"
+
+  - name: "Display output from second multipath run"
+    debug:
+      var: multipath_second_output
+
+  - name: "Running lsbk --ascii command"
+    register: lsblk_output
+    command:
+      cmd: "lsblk --ascii"
+
+  - name: "Display stdout from lsblk --ascii command"
+    debug:
+      var: lsblk_output.stdout_lines
+
+  - name: "Pausing the playbook to allow user to run the expect script \"partfix.exp\""
+    pause:
+      prompt: "From another terminal window run the \"partfix.exp\" expect script to correct the GPT partition table"
+      seconds: 999999
+
+  - name: "Resize LVM partition {{ lvm_partition_name }}"
+    become: yes
+    register: parted_output
+    command:
+      cmd: "parted /dev/{{ first_block_device }} -- unit s print free resizepart {{ lvm_partition_number }} 100% print free"
+
+  - name: "Output from parted command"
+    debug:
+      var: parted_output
+
+  - name: "Runnnig partprobe command"
+    become: yes
+    command:
+      cmd: "partprobe"
+
+  - name: "Resizing LVM partiton {{ lvm_partition_name }}"
+    become: yes
+    command:
+      cmd: "pvresize {{ lvm_partition_name }}"
+
+  - name: "Running pvscan command (and storing output)"
+    become: yes
+    register: pvscan_output
+    command:
+      cmd: "pvscan"
+
+  - name: "Displaying pvscan command output"
+    debug:
+      var: pvscan_output
+
+  - name: "Running pvdisplay command (and storing output)"
+    become: yes
+    register: pvdisplay_output
+    command:
+      cmd: "pvdisplay"
+
+  - name: "Displaying pvdisplay command output"
+    debug:
+      var: pvdisplay_output
+
+  - name: "Running vgdisplay command (and storing output)"
+    become: yes
+    register: vgdisplay_output
+    command:
+      cmd: "vgdisplay {{ root_vg_name }}"
+
+  - name: "Displaying vgdisplay command output"
+    debug:
+      var: vgdisplay_output
+
+
+...
+# end of file

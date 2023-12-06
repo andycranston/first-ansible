@@ -1,6 +1,6 @@
 ---
 #
-# @(!--#) @(#) syn_claim.yaml, sversion 0.1.0, fversion 002, 05-december-2023
+# @(!--#) @(#) syn_claim.yaml, sversion 0.1.0, fversion 003, 06-december-2023
 #
 # claim any unused disk into /dev/sdb3 (lvm) and add to volume group rhel on a Synergy 12000 Blade
 #
@@ -9,7 +9,7 @@
   hosts: "{{ reclaim_host }}"
   vars:
     root_vg_name: rhel_beach5
-    first_block_device: sda
+    primary_block_device: sdb
     lvm_partition_number: 3
     lvm_partition_name: "/dev/sda{{ lvm_partition_number }}"
     # lvm_partition_name: "/dev/mapper/mpatha{{ lvm_partition_number }}"
@@ -24,7 +24,7 @@
 
   - name: "Check name of root file system logical volume is not null"
     assert:
-      fail_msg: "Cannot get name of root file system logical volume fro /etc/fstab"
+      fail_msg: "Cannot get name of root file system logical volume from /etc/fstab"
       that: root_lv_output.stdout_lines[0] != ""
 
   - name: "Display name of root file system logical volume"
@@ -69,15 +69,15 @@
       fail_msg: "No name(s) of block device(s) available from lsblk command output"
       that: returned_number_block_devices|int != 0
 
-  - name: "Check limit of block device names is bot exceeded"
+  - name: "Check limit of block device names is not exceeded"
     assert:
       fail_msg: "Too many names of block devices displayed by lsblk command output"
       that: returned_number_block_devices|int <= max_number_block_devices|int
 
-  - name: "Check first block device is {{ first_block_device }}"
+  - name: "Check block device {{ primary_block_device }} is in list of block devices"
     assert:
-      fail_msg: "First block device is not {{ first_block_device }}"
-      that: block_devices.stdout_lines[0] == first_block_device
+      fail_msg: "First block device is not {{ primary_block_device }}"
+      that: primary_block_device in block_devices.stdout_lines
 
   - name: "Display names of block devices"
     debug:
@@ -145,12 +145,13 @@
     pause:
       prompt: "From another terminal window run the \"partfix.exp\" expect script to correct the GPT partition table"
       seconds: 999999
+      echo: true
 
-  - name: "Resize LVM partition {{ lvm_partition_name }}"
+  - name: "Resize LVM partition {{ lvm_partition_name }} on primary block device {{ primary_block_device }}"
     become: yes
     register: parted_output
     command:
-      cmd: "parted /dev/{{ first_block_device }} -- unit s print free resizepart {{ lvm_partition_number }} 100% print free"
+      cmd: "parted /dev/{{ primary_block_device }} -- unit s print free resizepart {{ lvm_partition_number }} 100% print free"
 
   - name: "Output from parted command"
     debug:

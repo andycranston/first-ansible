@@ -1,6 +1,6 @@
 ---
 #
-# @(!--#) @(#) syn_claim.yaml, sversion 0.1.0, fversion 003, 06-december-2023
+# @(!--#) @(#) syn_claim.yaml, sversion 0.1.0, fversion 004, 06-december-2023
 #
 # claim any unused disk into /dev/sdb3 (lvm) and add to volume group rhel on a Synergy 12000 Blade
 #
@@ -18,8 +18,9 @@
 
   - name: "Get name of root file system logical volume"
     register: root_lv_output
+    become: yes
     shell:
-      cmd: "expand /etc/fstab | grep ' / ' | head -n 1 | awk '{ print $1 }' | sed 's/^#//g'"
+      cmd: "vgdisplay -v | grep -A 2 '/root$' | grep '^  VG Name ' | tail -n 1 | awk '{ print $3 }'"
 
   - name: "Check name of root file system logical volume is not null"
     assert:

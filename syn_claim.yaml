@@ -8,11 +8,10 @@
 - name: "Claim any used disk space into root volume group"
   hosts: "{{ reclaim_host }}"
   vars:
-    root_vg_name: rhel_beach5
+    root_vg_name: rhel
     primary_block_device: sdb
     lvm_partition_number: 3
-    lvm_partition_name: "/dev/sda{{ lvm_partition_number }}"
-    # lvm_partition_name: "/dev/mapper/mpatha{{ lvm_partition_number }}"
+    lvm_partition_name: "/dev/mapper/mpatha{{ lvm_partition_number }}"
     max_number_block_devices: 4
     temp_one_file: /tmp/one.txt
   tasks:
@@ -20,7 +19,7 @@
   - name: "Get name of root file system logical volume"
     register: root_lv_output
     shell:
-      cmd: "expand /etc/fstab | grep ' / ' | head -n 1 | awk '{ print $1 }'"
+      cmd: "expand /etc/fstab | grep ' / ' | head -n 1 | awk '{ print $1 }' | sed 's/^#//g'"
 
   - name: "Check name of root file system logical volume is not null"
     assert:
@@ -35,7 +34,7 @@
     register: root_vg_output
     become: yes
     shell:
-      cmd: "lvdisplay {{ root_lv_output.stdout_lines[0] }} | grep '^  VG Name ' | awk '{ print $3 }'"
+      cmd: "lvdisplay '{{ root_lv_output.stdout_lines[0] }}' | grep '^  VG Name ' | awk '{ print $3 }'"
 
   - name: "Check the name of root volume group is not null"
     assert:
@@ -83,11 +82,15 @@
     debug:
       var: block_devices.stdout_lines
 
-  - name: "Display block device names one at a time"
+  - name: "Running vgdisplay command for first time (and storing output)"
+    become: yes
+    register: vgdisplay_output_first
+    command:
+      cmd: "vgdisplay {{ root_vg_name }}"
+
+  - name: "Displaying vgdisplay command output for first time"
     debug:
-      msg: "{{ item }}"
-    loop:
-      "{{ block_devices.stdout_lines }}"
+      var: vgdisplay_output_first
 
   - name: "Create temporary file {{ temp_one_file }}"
     copy:
@@ -187,15 +190,15 @@
     debug:
       var: pvdisplay_output
 
-  - name: "Running vgdisplay command (and storing output)"
+  - name: "Running vgdisplay command a second time (and storing output)"
     become: yes
-    register: vgdisplay_output
+    register: vgdisplay_output_second
     command:
       cmd: "vgdisplay {{ root_vg_name }}"
 
-  - name: "Displaying vgdisplay command output"
+  - name: "Displaying vgdisplay command output a second time"
     debug:
-      var: vgdisplay_output
+      var: vgdisplay_output_second
 
 
 ...

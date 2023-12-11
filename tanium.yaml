@@ -1,24 +1,34 @@
 ---
-# tanium.yaml
+#
+# @(!--#) @(#) tanium.yaml, sversion 0.1.0, fversion 002, 11-december-2023
+#
 - name: Create Tanium Partition/FS/Mount
   hosts: all
+  vars:
+    vg_name: rhel
+    lv_name: opt_Tanium
   become: yes
   tasks:
     - name: Create logical volume
       lvol:
-        vg: rhel
-        lv:  opt_Tanium
+        vg: "{{ vg_name }}"
+        lv: "{{ lv_name }}"
         size: 5g
+
+    - name: Wait a short period for the entry in /dev/mapper to appear
+      pause:
+        seconds: 5
+        prompt: Waiting ...
 
     - name: Format the volume as XFS filesystem
       filesystem:
         fstype: xfs
-        dev: /dev/rhel/opt_Tanium
+        dev: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
 
     - name: Mount the logical volume
       mount:
         path: /opt/Tanium
-        src: /dev/rhel/opt_Tanium
+        src: "/dev/mapper/{{ vg_name }}-{{ lv_name }}"
         fstype: xfs
         state: mounted
 ...

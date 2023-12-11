@@ -1,0 +1,25 @@
+---
+# tanium.yaml
+- name: Create Tanium Partition/FS/Mount
+  hosts: all
+  become: yes
+  tasks:
+    - name: Create logical volume
+      lvol:
+        vg: rhel
+        lv:  opt_Tanium
+        size: 5g
+
+    - name: Format the volume as XFS filesystem
+      filesystem:
+        fstype: xfs
+        dev: /dev/rhel/opt_Tanium
+
+    - name: Mount the logical volume
+      mount:
+        path: /opt/Tanium
+        src: /dev/rhel/opt_Tanium
+        fstype: xfs
+        state: mounted
+...
+# end of file

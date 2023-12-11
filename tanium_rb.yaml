@@ -1,0 +1,34 @@
+---
+# tanium_rb.yaml
+- name: Remove Tanium Partition/FS/Mount
+  hosts: all
+  #gather_facts: no
+  become: yes
+  tasks:
+    - name: "Count total number of files and subdirectories in /opt/Tanium"
+      register: file_count
+      shell:
+        cmd: "ls -A1 /opt/Tanium | wc -l | awk '{ print $1 }'"
+
+    - name: "Report number of files and subdirectories"
+      debug:
+        var: file_count.stdout[0]
+
+    - name: "Only proceed if total number of files and subdirectories is zero"
+      assert:
+        that: file_count.stdout[0]|int == 0
+        fail_msg: "Cannot remove /opt/Tanium filesystem and logical volume as {{ file_count.stdout[0] }} file(s) exist under /opt/Tanium"
+
+    - name: Unmount the logical volume
+      mount:
+        path: /opt/Tanium
+        state: absent
+
+    - name: Remove logical volume
+      lvol:
+        vg: rhel
+        lv:  opt_Tanium
+        state: absent
+        force: yes
+...
+# end of file

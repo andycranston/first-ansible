@@ -1,0 +1,36 @@
+---
+#
+# @(!--#) @(#) assert_free_space.yaml, sversion 0.1.0, fversion 002, 11-december-2023
+#
+- name: Assert there is free space in the root volume group
+  hosts: all
+  vars:
+    free_pe_threshold: "{{ free }}"
+  become: yes
+  tasks:
+    - name: "Display name of the volume group"
+      debug:
+        var: vg_name
+
+    - name: "Run the vgdisplay command"
+      become: yes
+      command:
+        cmd: "vgdisplay {{ vg_name }}"
+
+    - name: "Run the vgdisplay command a second time and extract the free physical extents"
+      become: yes
+      register: free_pe
+      shell:
+        cmd: "vgdisplay {{ vg_name }} | grep '^  Free  PE / Size ' | awk '{ print $5 }'"
+
+    - name: "Display free physical extents"
+      debug:
+        var: free_pe.stdout_lines[0]
+
+    - name: "Check free space"
+      fail:
+        msg: "Not enough free extents - need {{ free }} but only have {{ free_pe.stdout_lines[0] }}"
+      when: free_pe.stdout_lines[0]|int < free|int
+
+...
+# end of file
